@@ -2,7 +2,7 @@ import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
 import { useWallet } from '@solana/wallet-adapter-react';
 
 export function Header() {
-  const { connected } = useWallet();
+  const { connected, disconnect } = useWallet();
 
   return (
     <header className="flex items-center justify-between px-6 py-3 border-b border-border bg-card/60 backdrop-blur-md animate-fade-in">
@@ -28,7 +28,19 @@ export function Header() {
             Payout <span className="text-primary font-semibold">4×</span>
           </div>
         )}
-        <WalletMultiButton />
+        {connected ? (
+          <div className="flex items-center gap-2">
+            <WalletMultiButton className="!bg-primary/10 !text-primary !border-primary/20 hover:!bg-primary/20" />
+            <button
+              onClick={() => disconnect()}
+              className="px-3 py-1.5 rounded-md text-[10px] font-bold bg-destructive/10 text-destructive border border-destructive/20 hover:bg-destructive/15 transition-all uppercase tracking-wider"
+            >
+              Log Out
+            </button>
+          </div>
+        ) : (
+          <WalletMultiButton />
+        )}
       </div>
     </header>
   );

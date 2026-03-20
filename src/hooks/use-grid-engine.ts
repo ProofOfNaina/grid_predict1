@@ -10,6 +10,7 @@ export function useGridEngine(currentPrice: number, config: GridConfig = DEFAULT
   const [grid, setGrid] = useState<GridCell[]>([]);
   const [epoch, setEpoch] = useState(() => Date.now());
   const epochRef = useRef(epoch);
+  const [priceLevels, setPriceLevels] = useState<{ min: number; max: number; label: string }[]>([]);
 
   // Regenerate grid every futureWindow seconds
   const regenerateGrid = useCallback(() => {
@@ -20,9 +21,12 @@ export function useGridEngine(currentPrice: number, config: GridConfig = DEFAULT
     const centerPrice = Math.round(currentPrice / config.priceStep) * config.priceStep;
     const cells: GridCell[] = [];
 
+    // Calculate price levels once for this grid epoch
+    const levels = [];
     for (let pLevel = -config.priceLevels; pLevel <= config.priceLevels; pLevel++) {
       const priceMin = centerPrice + pLevel * config.priceStep;
       const priceMax = priceMin + config.priceStep;
+      levels.push({ min: priceMin, max: priceMax, label: `$${priceMin}–$${priceMax}` });
 
       for (let tSlot = 0; tSlot < config.futureWindow / config.timeStep; tSlot++) {
         const startTime = now + tSlot * config.timeStep * 1000;
@@ -42,6 +46,7 @@ export function useGridEngine(currentPrice: number, config: GridConfig = DEFAULT
     }
 
     setGrid(cells);
+    setPriceLevels(levels);
   }, [currentPrice, config]);
 
   // Initial generation
@@ -111,14 +116,6 @@ export function useGridEngine(currentPrice: number, config: GridConfig = DEFAULT
     endOffset: (i + 1) * config.timeStep,
     label: `${i * config.timeStep}–${(i + 1) * config.timeStep}s`,
   }));
-
-  // Compute price levels
-  const centerPrice = Math.round(currentPrice / config.priceStep) * config.priceStep;
-  const priceLevels = Array.from({ length: config.priceLevels * 2 + 1 }, (_, i) => {
-    const level = config.priceLevels - i;
-    const min = centerPrice + level * config.priceStep;
-    return { min, max: min + config.priceStep, label: `$${min}–$${min + config.priceStep}` };
-  }).reverse();
 
   return { grid, placeBet, timeSlots, priceLevels, epoch };
 }

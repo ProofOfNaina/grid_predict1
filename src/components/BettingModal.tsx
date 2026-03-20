@@ -113,39 +113,43 @@ export function BettingModal({ cell, onClose, onPlaceBet }: BettingModalProps) {
             </div>
           </div>
 
-          {/* Amount input */}
-          <div>
-            <label className="text-[10px] text-muted-foreground/70 mb-1 block uppercase tracking-wider font-medium">
-              Bet Amount (SOL)
-            </label>
-            <input
-              type="number"
-              value={amount}
-              onChange={e => setAmount(e.target.value)}
-              step="0.1"
-              min="0.01"
-              className="w-full bg-muted/60 border border-border rounded-lg px-4 py-2.5 font-mono text-sm tabular-nums
-                         focus:outline-none focus:ring-2 focus:ring-ring/50 focus:border-primary/30 transition-all"
-              placeholder="0.5"
-            />
-          </div>
+          {/* Amount Selection Section */}
+          <div className="bg-muted/30 rounded-lg p-3 border border-border/40 space-y-3">
+            <div>
+              <label className="text-[10px] text-muted-foreground/70 mb-1.5 block uppercase tracking-wider font-semibold">
+                Amount (SOL)
+              </label>
+              <div className="relative">
+                <input
+                  type="number"
+                  value={amount}
+                  onChange={e => setAmount(e.target.value)}
+                  step="0.1"
+                  min="0.01"
+                  className="w-full bg-background border border-border rounded-lg px-4 py-2.5 font-mono text-sm tabular-nums
+                             focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40 transition-all text-foreground"
+                  placeholder="0.5"
+                />
+              </div>
+            </div>
 
-          {/* Quick amounts */}
-          <div className="flex gap-1.5">
-            {QUICK_AMOUNTS.map(qa => (
-              <button
-                key={qa}
-                onClick={() => setAmount(String(qa))}
-                className={cn(
-                  'flex-1 py-1.5 rounded-md text-[11px] font-mono font-medium border transition-all duration-150 active:scale-95',
-                  amount === String(qa)
-                    ? 'bg-primary/12 border-primary/40 text-primary'
-                    : 'bg-muted/40 border-border text-muted-foreground hover:text-foreground hover:border-muted-foreground/30'
-                )}
-              >
-                {qa}
-              </button>
-            ))}
+            {/* Quick amounts */}
+            <div className="flex gap-1.5">
+              {QUICK_AMOUNTS.map(qa => (
+                <button
+                  key={qa}
+                  onClick={() => setAmount(String(qa))}
+                  className={cn(
+                    'flex-1 py-2 rounded-md text-[10px] font-mono font-bold border transition-all duration-150 active:scale-95',
+                    amount === String(qa)
+                      ? 'bg-primary/20 border-primary/50 text-white shadow-[0_0_12px_hsl(var(--primary)/0.15)]'
+                      : 'bg-muted/60 border-border text-muted-foreground hover:bg-muted/80'
+                  )}
+                >
+                  {qa}
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* Potential win */}
