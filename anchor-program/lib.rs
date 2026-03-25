@@ -4,13 +4,18 @@
 use anchor_lang::prelude::*;
 use anchor_lang::system_program;
 
-declare_id!("GridPredictXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX");
+declare_id!("5WnkG5k947XrUK1Lcf3bJ7Y31ncRWBFJbL51LyV8sLUh");
 
+pub const PROGRAM_ADMIN_ID: Pubkey = pubkey!("3mkMtv9kbVYi1Zh2dANQgPzR3d8oQ9hiMxsHZb515pBN");
 const PAYOUT_MULTIPLIER: u64 = 4;
 
 #[program]
 pub mod grid_predict {
     use super::*;
+
+    pub fn initialize_vault(_ctx: Context<InitializeVault>) -> Result<()> {
+        Ok(())
+    }
 
     pub fn create_grid(
         ctx: Context<CreateGrid>,
@@ -32,7 +37,12 @@ pub mod grid_predict {
         Ok(())
     }
 
-    pub fn place_bet(ctx: Context<PlaceBet>, amount: u64) -> Result<()> {
+    pub fn place_bet(
+        ctx: Context<PlaceBet>,
+        _price_min: u64,
+        _start_time: i64,
+        amount: u64,
+    ) -> Result<()> {
         let grid = &mut ctx.accounts.grid;
         require!(grid.status == GridStatus::Open, GridError::GridNotOpen);
 
@@ -87,7 +97,11 @@ pub mod grid_predict {
         Ok(())
     }
 
-    pub fn claim_reward(ctx: Context<ClaimReward>) -> Result<()> {
+    pub fn claim_reward(
+        ctx: Context<ClaimReward>,
+        _price_min: u64,
+        _start_time: i64,
+    ) -> Result<()> {
         let bet = &mut ctx.accounts.bet;
         let grid = &ctx.accounts.grid;
 
@@ -96,14 +110,19 @@ pub mod grid_predict {
 
         let payout = bet.amount * PAYOUT_MULTIPLIER;
 
-        // Transfer from vault to bettor using PDA signer
-        let seeds = &[b"vault".as_ref(), &[ctx.accounts.vault.bump]];
-        let signer = &[&seeds[..]];
-
         **ctx.accounts.vault.to_account_info().try_borrow_mut_lamports()? -= payout;
         **ctx.accounts.bettor.to_account_info().try_borrow_mut_lamports()? += payout;
 
         bet.claimed = true;
+        Ok(())
+    }
+
+    pub fn collect_revenue(ctx: Context<CollectRevenue>, amount: u64) -> Result<()> {
+        let vault_lamports = ctx.accounts.vault.to_account_info().lamports();
+        require!(vault_lamports >= amount, GridError::InsufficientVaultFunds);
+        
+        **ctx.accounts.vault.to_account_info().try_borrow_mut_lamports()? -= amount;
+        **ctx.accounts.authority.to_account_info().try_borrow_mut_lamports()? += amount;
 
         Ok(())
     }
@@ -168,8 +187,13 @@ pub struct CreateGrid<'info> {
 }
 
 #[derive(Accounts)]
+#[instruction(price_min: u64, start_time: i64, amount: u64)]
 pub struct PlaceBet<'info> {
-    #[account(mut)]
+    #[account(
+        mut,
+        seeds = [b"grid", price_min.to_le_bytes().as_ref(), start_time.to_le_bytes().as_ref()],
+        bump = grid.bump
+    )]
     pub grid: Account<'info, GridAccount>,
     #[account(
         init,
@@ -184,10 +208,25 @@ pub struct PlaceBet<'info> {
         seeds = [b"vault"],
         bump
     )]
-    /// CHECK: Vault PDA
-    pub vault: AccountInfo<'info>,
+    /// CHECK: Vault PDA address verified by seeds, does not need to be initialized for SOL transfers
+    pub vault: UncheckedAccount<'info>,
     #[account(mut)]
     pub bettor: Signer<'info>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct InitializeVault<'info> {
+    #[account(
+        init,
+        payer = authority,
+        space = 8 + 1,
+        seeds = [b"vault"],
+        bump
+    )]
+    pub vault: Account<'info, VaultAccount>,
+    #[account(mut)]
+    pub authority: Signer<'info>,
     pub system_program: Program<'info, System>,
 }
 
@@ -199,19 +238,44 @@ pub struct ResolveGrid<'info> {
 }
 
 #[derive(Accounts)]
+#[instruction(price_min: u64, start_time: i64)]
 pub struct ClaimReward<'info> {
-    #[account(mut, has_one = grid)]
+    #[account(
+        mut,
+        has_one = grid,
+        has_one = bettor
+    )]
     pub bet: Account<'info, BetAccount>,
+    #[account(
+        seeds = [b"grid", price_min.to_le_bytes().as_ref(), start_time.to_le_bytes().as_ref()],
+        bump = grid.bump
+    )]
     pub grid: Account<'info, GridAccount>,
     #[account(
         mut,
         seeds = [b"vault"],
         bump
     )]
-    /// CHECK: Vault PDA
-    pub vault: AccountInfo<'info>,
+    /// CHECK: Vault PDA address verified by seeds
+    pub vault: UncheckedAccount<'info>,
     #[account(mut)]
     pub bettor: Signer<'info>,
+}
+
+#[derive(Accounts)]
+pub struct CollectRevenue<'info> {
+    #[account(
+        mut,
+        seeds = [b"vault"],
+        bump
+    )]
+    /// CHECK: Vault PDA address verified by seeds.
+    pub vault: UncheckedAccount<'info>,
+    #[account(
+        mut,
+        constraint = authority.key() == PROGRAM_ADMIN_ID @ GridError::Unauthorized
+    )]
+    pub authority: Signer<'info>,
 }
 
 // === Errors ===
@@ -230,4 +294,8 @@ pub enum GridError {
     GridNotTouched,
     #[msg("Reward already claimed")]
     AlreadyClaimed,
+    #[msg("Unauthorized access")]
+    Unauthorized,
+    #[msg("Insufficient funds in vault")]
+    InsufficientVaultFunds,
 }

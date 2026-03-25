@@ -24,8 +24,10 @@ export function useGridEngine(currentPrice: number, config: GridConfig = DEFAULT
     // Calculate price levels once for this grid epoch
     const levels = [];
     for (let pLevel = -config.priceLevels; pLevel <= config.priceLevels; pLevel++) {
-      const priceMin = centerPrice + pLevel * config.priceStep;
-      const priceMax = priceMin + config.priceStep;
+      // Use toFixed or rounding to prevent 91.60000000000001
+      const priceMin = Number((centerPrice + pLevel * config.priceStep).toFixed(2));
+      const priceMax = Number((priceMin + config.priceStep).toFixed(2));
+      
       levels.push({ min: priceMin, max: priceMax, label: `$${priceMin}–$${priceMax}` });
 
       for (let tSlot = 0; tSlot < config.futureWindow / config.timeStep; tSlot++) {
@@ -54,13 +56,27 @@ export function useGridEngine(currentPrice: number, config: GridConfig = DEFAULT
     regenerateGrid();
   }, []); // only on mount
 
-  // Regenerate when window expires
+  // Regenerate when window expires OR if price drifts too far
+  useEffect(() => {
+    const centerPrice = Math.round(currentPrice / config.priceStep) * config.priceStep;
+    const currentCenter = priceLevels.length > 0 ? (priceLevels[0].min + priceLevels[priceLevels.length - 1].max) / 2 : currentPrice;
+    
+    // If price drifted more than 2 steps from center, or just started
+    const drift = Math.abs(currentPrice - currentCenter);
+    const threshold = config.priceStep * (config.priceLevels / 2);
+
+    if (priceLevels.length === 0 || drift > threshold) {
+      regenerateGrid();
+    }
+  }, [currentPrice, config.priceStep, config.priceLevels, priceLevels.length, regenerateGrid]);
+
+  // Periodic regeneration for time window
   useEffect(() => {
     const timer = setInterval(() => {
       regenerateGrid();
-    }, config.futureWindow * 1000);
+    }, config.timeStep * 1000); // Regenerate every time step to slide the window
     return () => clearInterval(timer);
-  }, [config.futureWindow, regenerateGrid]);
+  }, [config.timeStep, regenerateGrid]);
 
   // Update statuses based on time and price
   useEffect(() => {

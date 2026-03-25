@@ -24,11 +24,19 @@ export interface GridConfig {
   priceLevels: number;  // number of price levels above and below
 }
 
+export const PRICE_STEP_MAP: Record<string, number> = {
+  'SOL/USD': 0.1,   // 10 cents
+  'ETH/USD': 1.0,   // $1
+  'BTC/USD': 10.0,  // $10
+  'JUP/USD': 0.01,  // 1 cent
+  'PYTH/USD': 0.01, // 1 cent
+};
+
 export const DEFAULT_GRID_CONFIG: GridConfig = {
-  priceStep: 50,
+  priceStep: 0.1, 
   timeStep: 5,
   futureWindow: 30,
-  priceLevels: 3,
+  priceLevels: 4,
 };
 
 export const PAYOUT_MULTIPLIER = 4;

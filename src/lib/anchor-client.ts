@@ -2,12 +2,12 @@
 // Connects the frontend to a deployed Solana program.
 // Replace PROGRAM_ID with your actual deployed program ID.
 
-import { PublicKey, SystemProgram, Transaction, TransactionInstruction } from '@solana/web3.js';
+import { PublicKey, SystemProgram, Transaction, TransactionInstruction, ComputeBudgetProgram } from '@solana/web3.js';
 import type { WalletContextState } from '@solana/wallet-adapter-react';
 import type { Connection } from '@solana/web3.js';
 
 // Replace with your deployed program ID after `anchor deploy`
-export const PROGRAM_ID = new PublicKey('11111111111111111111111111111111');
+export const PROGRAM_ID = new PublicKey('5WnkG5k947XrUK1Lcf3bJ7Y31ncRWBFJbL51LyV8sLUh');
 
 // PDA derivation helpers
 export function getGridPDA(priceMin: number, startTime: number): [PublicKey, number] {
@@ -42,9 +42,7 @@ export function isProgramDeployed(): boolean {
   return PROGRAM_ID.toBase58() !== '11111111111111111111111111111111';
 }
 
-// Instruction builders using Anchor discriminators
-// These match the Anchor program in anchor-program/lib.rs
-
+// Helper methods for encoding
 function encodeU64(value: number): Buffer {
   const buf = Buffer.alloc(8);
   buf.writeBigUInt64LE(BigInt(Math.round(value)));
@@ -58,8 +56,9 @@ function encodeI64(value: number): Buffer {
 }
 
 // Anchor instruction discriminators (first 8 bytes of sha256("global:<instruction_name>"))
-// These are pre-computed for the instruction names in the Anchor program
 const DISCRIMINATORS = {
+  initialize_vault: Buffer.from([48, 191, 163, 44, 71, 129, 63, 164]), // sha256("global:initialize_vault")[0..8]
+  create_grid: Buffer.from([100, 135, 127, 158, 30, 0, 37, 82]), // sha256("global:create_grid")[0..8]
   place_bet: Buffer.from([222, 62, 67, 220, 63, 166, 126, 33]),  // sha256("global:place_bet")[0..8]
   claim_reward: Buffer.from([149, 95, 181, 242, 94, 90, 158, 162]), // sha256("global:claim_reward")[0..8]
 };
@@ -68,7 +67,9 @@ export async function buildPlaceBetTransaction(
   connection: Connection,
   wallet: WalletContextState,
   priceMin: number,
+  priceMax: number,
   startTime: number,
+  endTime: number,
   amount: number, // in SOL
 ): Promise<Transaction | null> {
   if (!wallet.publicKey || !isProgramDeployed()) return null;
@@ -77,14 +78,60 @@ export async function buildPlaceBetTransaction(
   const [betPDA] = getBetPDA(gridPDA, wallet.publicKey);
   const [vaultPDA] = getVaultPDA();
 
-  const lamports = Math.round(amount * 1e9); // SOL to lamports
+  const tx = new Transaction();
 
-  const data = Buffer.concat([
+  // 0. Add Compute Budget (Multi-instruction transactions need more units)
+  tx.add(ComputeBudgetProgram.setComputeUnitLimit({ units: 400000 }));
+
+  // Check vault and grid existence
+  const [vaultInfo, gridInfo] = await Promise.all([
+    connection.getAccountInfo(vaultPDA),
+    connection.getAccountInfo(gridPDA)
+  ]);
+
+  // 1. Initialize Vault if it doesn't exist
+  if (!vaultInfo) {
+    tx.add(new TransactionInstruction({
+      programId: PROGRAM_ID,
+      keys: [
+        { pubkey: vaultPDA, isSigner: false, isWritable: true },
+        { pubkey: wallet.publicKey, isSigner: true, isWritable: true },
+        { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+      ],
+      data: DISCRIMINATORS.initialize_vault,
+    }));
+  }
+
+  // 2. Create Grid if it doesn't exist
+  if (!gridInfo) {
+    const initData = Buffer.concat([
+      DISCRIMINATORS.create_grid,
+      encodeU64(priceMin * 100),
+      encodeU64(priceMax * 100),
+      encodeI64(startTime / 1000),
+      encodeI64(endTime / 1000),
+    ]);
+
+    tx.add(new TransactionInstruction({
+      programId: PROGRAM_ID,
+      keys: [
+        { pubkey: gridPDA, isSigner: false, isWritable: true },
+        { pubkey: wallet.publicKey, isSigner: true, isWritable: true },
+        { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+      ],
+      data: initData,
+    }));
+  }
+
+  const lamports = Math.round(amount * 1e9);
+  const betData = Buffer.concat([
     DISCRIMINATORS.place_bet,
+    encodeU64(priceMin * 100),
+    encodeI64(startTime / 1000),
     encodeU64(lamports),
   ]);
 
-  const ix = new TransactionInstruction({
+  tx.add(new TransactionInstruction({
     programId: PROGRAM_ID,
     keys: [
       { pubkey: gridPDA, isSigner: false, isWritable: true },
@@ -93,10 +140,9 @@ export async function buildPlaceBetTransaction(
       { pubkey: wallet.publicKey, isSigner: true, isWritable: true },
       { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
     ],
-    data,
-  });
+    data: betData,
+  }));
 
-  const tx = new Transaction().add(ix);
   tx.feePayer = wallet.publicKey;
   const { blockhash } = await connection.getLatestBlockhash();
   tx.recentBlockhash = blockhash;
@@ -116,6 +162,12 @@ export async function buildClaimRewardTransaction(
   const [betPDA] = getBetPDA(gridPDA, wallet.publicKey);
   const [vaultPDA] = getVaultPDA();
 
+  const data = Buffer.concat([
+    DISCRIMINATORS.claim_reward,
+    encodeU64(priceMin * 100),
+    encodeI64(startTime / 1000),
+  ]);
+
   const ix = new TransactionInstruction({
     programId: PROGRAM_ID,
     keys: [
@@ -124,7 +176,7 @@ export async function buildClaimRewardTransaction(
       { pubkey: vaultPDA, isSigner: false, isWritable: true },
       { pubkey: wallet.publicKey, isSigner: true, isWritable: true },
     ],
-    data: DISCRIMINATORS.claim_reward,
+    data,
   });
 
   const tx = new Transaction().add(ix);

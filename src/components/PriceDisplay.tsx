@@ -31,7 +31,7 @@ export function PriceDisplay({ price, change, pair, connected }: PriceDisplayPro
             !change && 'text-foreground'
           )}
         >
-          ${price.toFixed(2)}
+          ${price < 10 ? price.toFixed(4) : price.toFixed(2)}
         </span>
         {change && (
           <span

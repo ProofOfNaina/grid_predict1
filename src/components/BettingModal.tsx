@@ -10,13 +10,14 @@ import { toast } from 'sonner';
 
 interface BettingModalProps {
   cell: GridCell;
+  symbol: string;
   onClose: () => void;
   onPlaceBet: (cell: GridCell, amount: number) => void;
 }
 
 const QUICK_AMOUNTS = [0.1, 0.5, 1, 2];
 
-export function BettingModal({ cell, onClose, onPlaceBet }: BettingModalProps) {
+export function BettingModal({ cell, symbol, onClose, onPlaceBet }: BettingModalProps) {
   const wallet = useWallet();
   const { connection } = useConnection();
   const [amount, setAmount] = useState('0.5');
@@ -33,16 +34,47 @@ export function BettingModal({ cell, onClose, onPlaceBet }: BettingModalProps) {
     setError('');
 
     try {
-      if (onChain && wallet.sendTransaction) {
+      if (onChain && wallet.sendTransaction && wallet.publicKey) {
+        // Log debug info
+        console.log('[BET DEBUG]', {
+          priceMin: cell.priceMin,
+          startTime: cell.startTime,
+          amount: numAmount,
+          wallet: wallet.publicKey.toBase58()
+        });
+
+        // Pre-check balance
+        const balance = await connection.getBalance(wallet.publicKey);
+        const required = (numAmount * 1e9) + 5000000; // Bet + ~0.005 SOL for rent/fees
+        
+        if (balance < required) {
+          throw new Error(`Insufficient SOL. Need ~${(required/1e9).toFixed(3)} SOL for bet and fees.`);
+        }
+
         const tx = await buildPlaceBetTransaction(
           connection,
           wallet,
           cell.priceMin,
+          cell.priceMax,
           cell.startTime,
+          cell.endTime,
           numAmount,
         );
+        
         if (tx) {
+          // Manual simulation for better error visibility
+          console.log('[BET SIMULATING]...');
+          const simulation = await connection.simulateTransaction(tx);
+          if (simulation.value.err) {
+            console.error('[SIMULATION FAILED]', simulation.value);
+            if (simulation.value.logs) {
+              console.log('[SIMUALTION LOGS]', simulation.value.logs);
+            }
+            throw new Error(`Simulation failed: ${JSON.stringify(simulation.value.err)}`);
+          }
+
           const sig = await wallet.sendTransaction(tx, connection);
+          console.log('[BET SUCCESS] Signature:', sig);
           await connection.confirmTransaction(sig, 'confirmed');
           toast.success(`Bet placed! TX: ${sig.slice(0, 8)}...`);
         }
@@ -54,10 +86,26 @@ export function BettingModal({ cell, onClose, onPlaceBet }: BettingModalProps) {
       onPlaceBet(cell, numAmount);
       onClose();
     } catch (err: any) {
-      console.error('Bet failed:', err);
-      const msg = err?.message || 'Transaction failed';
-      setError(msg.length > 80 ? msg.slice(0, 80) + '...' : msg);
-      toast.error('Bet failed');
+      console.error('[BET ERROR]', err);
+      
+      let msg = err?.message || 'Transaction failed';
+      
+      // Specifically handle common Anchor/Solana errors
+      if (err.message?.includes('0x1771')) msg = 'Too early to bet on this slot';
+      if (err.message?.includes('Account already in use')) msg = 'Someone already bet on this slot';
+      if (err.message?.includes('0x1')) msg = 'Insufficient SOL in your wallet';
+      
+      if (err.logs) {
+        console.log('[BET LOGS]', err.logs);
+        // Extract better error message from logs if possible
+        const anchorError = err.logs.find((l: string) => l.includes('Error Number:'));
+        if (anchorError) {
+          msg = `Program Error: ${anchorError.split(':').pop()?.trim()}`;
+        }
+      }
+      
+      setError(msg.length > 120 ? msg.slice(0, 120) + '...' : msg);
+      toast.error('Transaction failed');
     } finally {
       setPlacing(false);
     }
@@ -117,7 +165,7 @@ export function BettingModal({ cell, onClose, onPlaceBet }: BettingModalProps) {
           <div className="bg-muted/30 rounded-lg p-3 border border-border/40 space-y-3">
             <div>
               <label className="text-[10px] text-muted-foreground/70 mb-1.5 block uppercase tracking-wider font-semibold">
-                Amount (SOL)
+                Amount ({symbol})
               </label>
               <div className="relative">
                 <input
@@ -157,7 +205,7 @@ export function BettingModal({ cell, onClose, onPlaceBet }: BettingModalProps) {
             <div className="flex items-center justify-between py-2.5 px-3 rounded-lg bg-primary/5 border border-primary/15">
               <span className="text-[10px] text-muted-foreground">Potential Win</span>
               <span className="font-mono font-bold text-primary text-sm tabular-nums">
-                {potentialWin.toFixed(2)} SOL
+                {potentialWin.toFixed(2)} {symbol}
               </span>
             </div>
           )}
@@ -187,7 +235,7 @@ export function BettingModal({ cell, onClose, onPlaceBet }: BettingModalProps) {
                   {onChain ? 'Signing...' : 'Confirming...'}
                 </span>
               ) : (
-                `Bet ${numAmount} SOL`
+                `Bet ${numAmount} ${symbol}`
               )}
             </button>
           ) : (

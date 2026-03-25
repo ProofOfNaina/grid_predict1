@@ -7,6 +7,7 @@ interface PredictionGridProps {
   timeSlots: { index: number; label: string }[];
   priceLevels: { min: number; max: number; label: string }[];
   currentPrice: number;
+  symbol: string;
   onCellClick: (cell: GridCell) => void;
 }
 
@@ -36,6 +37,7 @@ export function PredictionGrid({
   timeSlots,
   priceLevels,
   currentPrice,
+  symbol,
   onCellClick,
 }: PredictionGridProps) {
   const gridMap = useMemo(() => {
@@ -93,12 +95,12 @@ export function PredictionGrid({
                   )}
                 </div>
 
-                {/* Cells */}
                 {timeSlots.map((slot, colIdx) => {
                   const actualPriceLevel = priceLevels[priceLevels.length - 1 - rowIdx];
+                  const timeStepMs = grid.length > 1 ? Math.abs(grid[1].startTime - grid[0].startTime) : 5000;
                   const cell = grid.find(
-                    c => c.priceMin === actualPriceLevel.min &&
-                    Math.abs(c.startTime - (grid[0]?.startTime || 0) - slot.index * 5000) < 100
+                    c => c.priceMin === actualPriceLevel.min && 
+                    Math.abs(c.startTime - (grid[0]?.startTime || 0) - slot.index * timeStepMs) < (timeStepMs / 2)
                   );
 
                   if (!cell) {
@@ -128,7 +130,7 @@ export function PredictionGrid({
                       )}
                       {cell.userBet && cell.userBet > 0 && (
                         <span className="text-[9px] font-mono font-semibold leading-none">
-                          {cell.userBet} SOL
+                          {cell.userBet} {symbol}
                         </span>
                       )}
                       {cell.status === 'TOUCHED' && cell.userBet && (

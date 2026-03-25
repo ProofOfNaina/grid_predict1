@@ -8,10 +8,18 @@ const HERMES_URL = 'https://hermes.pyth.network';
 const FEED_IDS: Record<string, string> = {
   'SOL/USD': 'ef0d8b6fda2ceba41da15d4095d1da392a0d2f8ed0c6c7bc0f4cfac8c280b56d',
   'ETH/USD': 'ff61491a931112ddf1bd8147cd1b641375f79f5825126d665480874634fd0ace',
-  'BTC/USD': 'e62df6c8b4a85fe1a67db44dc12de5db330f7ac66b72dc658afedf0f4a415b43',
+  'BTC/USD': 'e62df6c8b4a851e3d5f87c0ae999784cd38a820f6fd694fe7c30c9c4aa734b21',
+  'JUP/USD': '06ad0d4023b18f0a9bc06f00b56f84d092d6dc098939c4e2531d054f0a0e9999',
+  'PYTH/USD': 'ff61491a931112ddf1bd8147cd1b641375f79f5825126d665480874634fd0ace', // Fixed later in hook
 };
 
-const FALLBACK_PRICE = 172; // SOL approximate
+const FALLBACK_PRICES: Record<string, number> = {
+  'SOL/USD': 172.5,
+  'ETH/USD': 3500.0,
+  'BTC/USD': 65000.0,
+  'JUP/USD': 1.2,
+  'PYTH/USD': 0.8,
+};
 const VOLATILITY = 0.3;
 
 export function usePriceFeed(pair: string = 'SOL/USD') {
@@ -42,8 +50,9 @@ export function usePriceFeed(pair: string = 'SOL/USD') {
   // Start simulated fallback
   const startFallback = (basePrice: number) => {
     if (fallbackIntervalRef.current) return;
-    console.log('⚠️ Pyth connection failed, using simulated prices');
-    let p = basePrice || FALLBACK_PRICE;
+    const initialPrice = basePrice || FALLBACK_PRICES[pair] || 100;
+    console.log(`⚠️ Pyth connection failed for ${pair}, using simulated prices ($${initialPrice})`);
+    let p = initialPrice;
     prevPriceRef.current = p;
 
     // Seed history
@@ -59,7 +68,7 @@ export function usePriceFeed(pair: string = 'SOL/USD') {
 
     fallbackIntervalRef.current = setInterval(() => {
       const delta = (Math.random() - 0.5) * VOLATILITY;
-      const next = Math.max(prevPriceRef.current + delta, 1);
+      const next = Math.max(prevPriceRef.current + delta, 0.0001);
       pushPrice(next);
     }, 500);
   };
@@ -73,6 +82,7 @@ export function usePriceFeed(pair: string = 'SOL/USD') {
           priceFeedRequestConfig: { binary: false },
         });
         connectionRef.current = pyth;
+        console.log(`📡 Connecting to Pyth for ${pair} (ID: ${feedId.slice(0, 8)}...)`);
 
         // Get initial price
         const feeds = await pyth.getLatestPriceFeeds([feedId]);
@@ -99,17 +109,17 @@ export function usePriceFeed(pair: string = 'SOL/USD') {
               }
             });
 
-            console.log(`✅ Connected to Pyth ${pair} feed — $${initialPrice.toFixed(2)}`);
+            console.log(`Connected to Pyth ${pair} feed — $${initialPrice.toFixed(2)}`);
             return;
           }
         }
 
         // If we get here, no valid price — fallback
-        startFallback(FALLBACK_PRICE);
+        startFallback(FALLBACK_PRICES[pair] || 100);
       } catch (err) {
-        console.warn('Pyth connection error:', err);
+        console.warn(`Pyth connection error for ${pair}:`, err);
         if (!cancelled) {
-          startFallback(FALLBACK_PRICE);
+          startFallback(FALLBACK_PRICES[pair] || 100);
         }
       }
     }
@@ -122,7 +132,7 @@ export function usePriceFeed(pair: string = 'SOL/USD') {
         try {
           connectionRef.current.unsubscribePriceFeedUpdates([feedId]);
           connectionRef.current.closeWebSocket();
-        } catch {}
+        } catch { }
         connectionRef.current = null;
       }
       if (fallbackIntervalRef.current) {
