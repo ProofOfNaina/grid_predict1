@@ -3,6 +3,7 @@
 
 use anchor_lang::prelude::*;
 use anchor_lang::system_program;
+use anchor_lang::solana_program::pubkey;
 
 declare_id!("5WnkG5k947XrUK1Lcf3bJ7Y31ncRWBFJbL51LyV8sLUh");
 
