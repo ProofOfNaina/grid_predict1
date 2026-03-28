@@ -67,26 +67,28 @@ async function main() {
         if (now >= grid.account.startTime && now <= grid.account.endTime) {
           if (currentPrice >= grid.account.priceMin && currentPrice <= grid.account.priceMax) {
             try {
-              await program.methods.resolveGrid().accounts({ 
+              const sig = await program.methods.resolveGrid().accounts({ 
                 grid: grid.publicKey, 
                 vault: vaultPDA,
                 owner: ownerPDA,
                 authority: wallet.publicKey 
               }).rpc();
               console.log(`✅ Grid ${grid.publicKey} TOUCHED at $${currentPrice}`);
+              console.log(`🔗 Explorer: https://explorer.solana.com/tx/${sig}?cluster=devnet`);
             } catch (error) {
               console.error(`Failed to resolve grid ${grid.publicKey}:`, error);
             }
           }
         } else if (now > grid.account.endTime) {
           try {
-            await program.methods.expireGrid().accounts({ 
+            const sig = await program.methods.expireGrid().accounts({ 
               grid: grid.publicKey, 
               vault: vaultPDA,
               owner: ownerPDA,
               authority: wallet.publicKey 
             }).rpc();
             console.log(`⏰ Grid ${grid.publicKey} EXPIRED`);
+            console.log(`🔗 Explorer: https://explorer.solana.com/tx/${sig}?cluster=devnet`);
           } catch (error) {
             console.error(`Failed to expire grid ${grid.publicKey}:`, error);
           }

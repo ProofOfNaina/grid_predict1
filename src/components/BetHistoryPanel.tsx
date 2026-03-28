@@ -8,6 +8,9 @@ interface BetHistoryPanelProps {
   onClaim: (betId: string) => void;
   visible: boolean;
   onToggle: () => void;
+  vaultBalance?: number;
+  onCollectRevenue?: (amount: number) => void;
+  isAdmin?: boolean;
 }
 
 function statusLabel(status: string) {
@@ -30,7 +33,15 @@ function statusColor(status: string) {
   }
 }
 
-export function BetHistoryPanel({ bets, onClaim, visible, onToggle }: BetHistoryPanelProps) {
+export function BetHistoryPanel({ 
+  bets, 
+  onClaim, 
+  visible, 
+  onToggle,
+  vaultBalance,
+  onCollectRevenue,
+  isAdmin
+}: BetHistoryPanelProps) {
   const stats = useMemo(() => {
     const totalBet = bets.reduce((s, b) => s + b.amount, 0);
     const wins = bets.filter(b => b.status === 'TOUCHED');
@@ -104,6 +115,38 @@ export function BetHistoryPanel({ bets, onClaim, visible, onToggle }: BetHistory
           </div>
         )}
 
+        {/* Admin Section */}
+        {isAdmin && vaultBalance !== undefined && (
+          <div className="mx-3 mt-4 mb-2 p-3 rounded-lg bg-zinc-900 border border-primary/20">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[9px] uppercase tracking-wider text-primary font-bold">Admin Management</span>
+              <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
+            </div>
+            <div className="flex items-end justify-between mb-3">
+              <div>
+                <p className="text-[8px] text-muted-foreground uppercase mb-0.5">Vault Balance</p>
+                <p className="font-mono text-base font-bold text-white tabular-nums">
+                  {vaultBalance.toFixed(3)} <span className="text-[10px] text-primary">SOL</span>
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => onCollectRevenue?.(Math.max(0, vaultBalance - 0.01))}
+              disabled={vaultBalance < 0.05}
+              className={cn(
+                'w-full py-2 rounded-md text-[10px] font-bold transition-all transition-all duration-200',
+                'bg-primary text-primary-foreground hover:shadow-[0_0_15px_hsl(var(--primary)/0.3)]',
+                'disabled:opacity-30 disabled:grayscale'
+              )}
+            >
+              Withdraw Profits
+            </button>
+            <p className="mt-2 text-[8px] text-muted-foreground/50 text-center leading-tight">
+              Withdraws all funds except a small reserve for fees.
+            </p>
+          </div>
+        )}
+
         {/* Bet list */}
         <div className="flex-1 overflow-y-auto p-3 space-y-1.5">
           {bets.length === 0 ? (
@@ -135,9 +178,24 @@ export function BetHistoryPanel({ bets, onClaim, visible, onToggle }: BetHistory
                 </div>
                 <div className="flex items-center justify-between text-[9px] text-muted-foreground/50 font-mono">
                   <span className="tabular-nums">{bet.amount} SOL</span>
-                  <span className="tabular-nums">
-                    {new Date(bet.placedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                  </span>
+                  <div className="flex items-center gap-1.5">
+                    {bet.txHash && (
+                      <a
+                        href={`https://explorer.solana.com/tx/${bet.txHash}?cluster=devnet`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="p-0.5 hover:bg-muted rounded-md text-primary/60 hover:text-primary transition-all active:scale-95 group relative"
+                        title="View on Solana Explorer"
+                      >
+                        <svg className="w-2.5 h-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                          <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3" />
+                        </svg>
+                      </a>
+                    )}
+                    <span className="tabular-nums">
+                      {new Date(bet.placedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                    </span>
+                  </div>
                 </div>
 
                 {bet.status === 'TOUCHED' && !bet.claimed && (
