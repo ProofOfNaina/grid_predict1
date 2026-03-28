@@ -12,71 +12,77 @@ export function useGridEngine(currentPrice: number, config: GridConfig = DEFAULT
   const epochRef = useRef(epoch);
   const [priceLevels, setPriceLevels] = useState<{ min: number; max: number; label: string }[]>([]);
 
-  // Regenerate grid every futureWindow seconds
-  const regenerateGrid = useCallback(() => {
+  const evolveGrid = useCallback(() => {
     const now = Date.now();
-    epochRef.current = now;
-    setEpoch(now);
-
-    const centerPrice = Math.round(currentPrice / config.priceStep) * config.priceStep;
-    const cells: GridCell[] = [];
-
-    // Calculate price levels once for this grid epoch
-    const levels = [];
-    for (let pLevel = -config.priceLevels; pLevel <= config.priceLevels; pLevel++) {
-      // Use toFixed or rounding to prevent 91.60000000000001
-      const priceMin = Number((centerPrice + pLevel * config.priceStep).toFixed(2));
-      const priceMax = Number((priceMin + config.priceStep).toFixed(2));
-      
-      levels.push({ min: priceMin, max: priceMax, label: `$${priceMin}–$${priceMax}` });
-
-      for (let tSlot = 0; tSlot < config.futureWindow / config.timeStep; tSlot++) {
-        const startTime = now + tSlot * config.timeStep * 1000;
-        const endTime = startTime + config.timeStep * 1000;
-
-        cells.push({
-          id: generateGridId(priceMin, startTime),
-          priceMin,
-          priceMax,
-          startTime,
-          endTime,
-          status: 'OPEN',
-          totalBets: 0,
-          totalAmount: 0,
-        });
-      }
-    }
-
-    setGrid(cells);
-    setPriceLevels(levels);
-  }, [currentPrice, config]);
-
-  // Initial generation
-  useEffect(() => {
-    regenerateGrid();
-  }, []); // only on mount
-
-  // Regenerate when window expires OR if price drifts too far
-  useEffect(() => {
-    const centerPrice = Math.round(currentPrice / config.priceStep) * config.priceStep;
-    const currentCenter = priceLevels.length > 0 ? (priceLevels[0].min + priceLevels[priceLevels.length - 1].max) / 2 : currentPrice;
+    const timeStepMs = config.timeStep * 1000;
     
-    // If price drifted more than 2 steps from center, or just started
+    setGrid(prev => {
+      // 1. Remove cells that have ended more than 30s ago to keep state lean
+      const cutoff = now - 30000;
+      let updated = prev.filter(cell => cell.endTime > cutoff);
+
+      // 2. Identify the current maximum start time in the grid
+      // Align to fixed timeStep boundaries for reliable UI indexing
+      const nowRounded = Math.floor(now / timeStepMs) * timeStepMs;
+      const maxStartTime = updated.length > 0 
+        ? Math.max(...updated.map(c => c.startTime))
+        : nowRounded - timeStepMs;
+
+      // 3. If we don't have enough future cells, append them
+      const targetMaxTime = nowRounded + config.futureWindow * 1000;
+      
+      if (maxStartTime < targetMaxTime) {
+        const centerPrice = Math.round(currentPrice / config.priceStep) * config.priceStep;
+        const newCells: GridCell[] = [];
+
+        // Generate next columns
+        let nextStartTime = maxStartTime + timeStepMs;
+        while (nextStartTime <= targetMaxTime) {
+          for (let pLevel = -config.priceLevels; pLevel <= config.priceLevels; pLevel++) {
+            const priceMin = Number((centerPrice + pLevel * config.priceStep).toFixed(2));
+            newCells.push({
+              id: generateGridId(priceMin, nextStartTime),
+              priceMin,
+              priceMax: Number((priceMin + config.priceStep).toFixed(2)),
+              startTime: nextStartTime,
+              endTime: nextStartTime + timeStepMs,
+              status: 'OPEN',
+              totalBets: 0,
+              totalAmount: 0,
+            });
+          }
+          nextStartTime += timeStepMs;
+        }
+        updated = [...updated, ...newCells];
+      }
+
+      return updated;
+    });
+
+    // Update price levels (y-axis) only if price drifts out of current center
+    const currentCenter = priceLevels.length > 0 ? (priceLevels[0].min + priceLevels[priceLevels.length - 1].max) / 2 : currentPrice;
     const drift = Math.abs(currentPrice - currentCenter);
     const threshold = config.priceStep * (config.priceLevels / 2);
 
     if (priceLevels.length === 0 || drift > threshold) {
-      regenerateGrid();
+      const centerPrice = Math.round(currentPrice / config.priceStep) * config.priceStep;
+      const levels = [];
+      for (let pLevel = -config.priceLevels; pLevel <= config.priceLevels; pLevel++) {
+        const priceMin = Number((centerPrice + pLevel * config.priceStep).toFixed(2));
+        const priceMax = Number((priceMin + config.priceStep).toFixed(2));
+        levels.push({ min: priceMin, max: priceMax, label: `$${priceMin}–$${priceMax}` });
+      }
+      setPriceLevels(levels);
     }
-  }, [currentPrice, config.priceStep, config.priceLevels, priceLevels.length, regenerateGrid]);
+  }, [currentPrice, config, priceLevels]);
 
-  // Periodic regeneration for time window
+  // Initial and periodic update
   useEffect(() => {
-    const timer = setInterval(() => {
-      regenerateGrid();
-    }, config.timeStep * 1000); // Regenerate every time step to slide the window
+    evolveGrid();
+    const timer = setInterval(evolveGrid, 2000); // Check every 2s if we need more cells
     return () => clearInterval(timer);
-  }, [config.timeStep, regenerateGrid]);
+  }, [evolveGrid]);
+
 
   // Update statuses based on time and price
   useEffect(() => {

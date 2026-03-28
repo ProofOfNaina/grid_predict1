@@ -8,9 +8,9 @@ const HERMES_URL = 'https://hermes.pyth.network';
 const FEED_IDS: Record<string, string> = {
   'SOL/USD': 'ef0d8b6fda2ceba41da15d4095d1da392a0d2f8ed0c6c7bc0f4cfac8c280b56d',
   'ETH/USD': 'ff61491a931112ddf1bd8147cd1b641375f79f5825126d665480874634fd0ace',
-  'BTC/USD': 'e62df6c8b4a851e3d5f87c0ae999784cd38a820f6fd694fe7c30c9c4aa734b21',
-  'JUP/USD': '06ad0d4023b18f0a9bc06f00b56f84d092d6dc098939c4e2531d054f0a0e9999',
-  'PYTH/USD': 'ff61491a931112ddf1bd8147cd1b641375f79f5825126d665480874634fd0ace', // Fixed later in hook
+  'BTC/USD': 'e62df6c8b4a85fe1a67db44dc12de5db330f7ac66b72dc658afedf0f4a415b43',
+  'JUP/USD': '0a0408d619e9380abad35060f9192039ed5042fa6f82301d0e48bb52be830996',
+  'PYTH/USD': '0bbf28e9a841a1cc788f6a361b17ca072d0ea3098a1e5df1c3922d06719579ff',
 };
 
 const FALLBACK_PRICES: Record<string, number> = {
@@ -51,7 +51,7 @@ export function usePriceFeed(pair: string = 'SOL/USD') {
   const startFallback = (basePrice: number) => {
     if (fallbackIntervalRef.current) return;
     const initialPrice = basePrice || FALLBACK_PRICES[pair] || 100;
-    console.log(`⚠️ Pyth connection failed for ${pair}, using simulated prices ($${initialPrice})`);
+    console.log(`Pyth connection failed for ${pair}, using simulated prices ($${initialPrice})`);
     let p = initialPrice;
     prevPriceRef.current = p;
 
@@ -152,3 +152,5 @@ export function usePriceFeed(pair: string = 'SOL/USD') {
 
   return { currentPrice, priceHistory, priceChange, connected };
 }
+
+

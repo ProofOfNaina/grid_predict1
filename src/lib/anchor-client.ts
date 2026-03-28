@@ -61,7 +61,41 @@ const DISCRIMINATORS = {
   create_grid: Buffer.from([100, 135, 127, 158, 30, 0, 37, 82]), // sha256("global:create_grid")[0..8]
   place_bet: Buffer.from([222, 62, 67, 220, 63, 166, 126, 33]),  // sha256("global:place_bet")[0..8]
   claim_reward: Buffer.from([149, 95, 181, 242, 94, 90, 158, 162]), // sha256("global:claim_reward")[0..8]
+  collect_revenue: Buffer.from([87, 96, 211, 36, 240, 43, 246, 87]), // sha256("global:collect_revenue")
 };
+
+export async function buildCollectRevenueTransaction(
+  connection: Connection,
+  wallet: WalletContextState,
+  amount: number, // in SOL
+): Promise<Transaction | null> {
+  if (!wallet.publicKey || !isProgramDeployed()) return null;
+
+  const [vaultPDA] = getVaultPDA();
+  const lamports = Math.round(amount * 1e9);
+
+  const data = Buffer.concat([
+    DISCRIMINATORS.collect_revenue,
+    encodeU64(lamports),
+  ]);
+
+  const ix = new TransactionInstruction({
+    programId: PROGRAM_ID,
+    keys: [
+      { pubkey: vaultPDA, isSigner: false, isWritable: true },
+      { pubkey: wallet.publicKey, isSigner: true, isWritable: true }, // Owner
+      { pubkey: wallet.publicKey, isSigner: true, isWritable: true }, // Authority
+    ],
+    data,
+  });
+
+  const tx = new Transaction().add(ix);
+  tx.feePayer = wallet.publicKey;
+  const { blockhash } = await connection.getLatestBlockhash();
+  tx.recentBlockhash = blockhash;
+
+  return tx;
+}
 
 export async function buildPlaceBetTransaction(
   connection: Connection,

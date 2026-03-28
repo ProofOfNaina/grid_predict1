@@ -14,7 +14,10 @@ const PAYOUT_MULTIPLIER: u64 = 4;
 pub mod grid_predict {
     use super::*;
 
-    pub fn initialize_vault(_ctx: Context<InitializeVault>) -> Result<()> {
+    pub fn initialize_vault(ctx: Context<InitializeVault>) -> Result<()> {
+        let vault = &mut ctx.accounts.vault;
+        vault.owner = ctx.accounts.authority.key();
+        vault.bump = ctx.bumps.vault;
         Ok(())
     }
 
@@ -95,6 +98,19 @@ pub mod grid_predict {
             GridError::GridAlreadyResolved
         );
         grid.status = GridStatus::Expired;
+
+        // Automatically transfer the total lost amount to the vault owner
+        let amount = grid.total_amount;
+        if amount > 0 {
+            let vault_info = ctx.accounts.vault.to_account_info();
+            let owner_info = ctx.accounts.owner.to_account_info();
+            
+            // PDA transfer logic (modifying lamports directly for PDAs if possible, 
+            // but vault is Unchecked here, let's use the mutation approach)
+            **vault_info.try_borrow_mut_lamports()? -= amount;
+            **owner_info.try_borrow_mut_lamports()? += amount;
+        }
+
         Ok(())
     }
 
@@ -119,11 +135,12 @@ pub mod grid_predict {
     }
 
     pub fn collect_revenue(ctx: Context<CollectRevenue>, amount: u64) -> Result<()> {
-        let vault_lamports = ctx.accounts.vault.to_account_info().lamports();
+        let vault_info = ctx.accounts.vault.to_account_info();
+        let vault_lamports = vault_info.lamports();
         require!(vault_lamports >= amount, GridError::InsufficientVaultFunds);
         
-        **ctx.accounts.vault.to_account_info().try_borrow_mut_lamports()? -= amount;
-        **ctx.accounts.authority.to_account_info().try_borrow_mut_lamports()? += amount;
+        **vault_info.try_borrow_mut_lamports()? -= amount;
+        **ctx.accounts.owner.to_account_info().try_borrow_mut_lamports()? += amount;
 
         Ok(())
     }
@@ -156,6 +173,7 @@ pub struct BetAccount {
 
 #[account]
 pub struct VaultAccount {
+    pub owner: Pubkey,
     pub bump: u8,
 }
 
@@ -221,7 +239,7 @@ pub struct InitializeVault<'info> {
     #[account(
         init,
         payer = authority,
-        space = 8 + 1,
+        space = 8 + 32 + 1,
         seeds = [b"vault"],
         bump
     )]
@@ -235,6 +253,15 @@ pub struct InitializeVault<'info> {
 pub struct ResolveGrid<'info> {
     #[account(mut)]
     pub grid: Account<'info, GridAccount>,
+    #[account(
+        mut,
+        seeds = [b"vault"],
+        bump = vault.bump,
+        has_one = owner @ GridError::Unauthorized
+    )]
+    pub vault: Account<'info, VaultAccount>,
+    #[account(mut)]
+    pub owner: AccountInfo<'info>,
     pub authority: Signer<'info>,
 }
 
@@ -268,15 +295,13 @@ pub struct CollectRevenue<'info> {
     #[account(
         mut,
         seeds = [b"vault"],
-        bump
+        bump = vault.bump,
+        has_one = owner @ GridError::Unauthorized
     )]
-    /// CHECK: Vault PDA address verified by seeds.
-    pub vault: UncheckedAccount<'info>,
-    #[account(
-        mut,
-        constraint = authority.key() == PROGRAM_ADMIN_ID @ GridError::Unauthorized
-    )]
-    pub authority: Signer<'info>,
+    pub vault: Account<'info, VaultAccount>,
+    #[account(mut)]
+    pub owner: Signer<'info>,
+    pub authority: Signer<'info>, // Can be same as owner
 }
 
 // === Errors ===

@@ -45,6 +45,27 @@ export function PriceDisplay({ price, change, pair, connected }: PriceDisplayPro
         )}
       </div>
 
+      {/* 15s Countdown Timer */}
+      <div className="flex flex-col items-start gap-0.5 ml-4 pr-4 border-r border-border/50">
+        <span className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider leading-none">Next Round</span>
+        <div className="flex items-center gap-1.5">
+          <span className="text-lg font-mono font-bold text-primary tabular-nums">
+            {Math.max(0, 15 - (Math.floor(Date.now() / 1000) % 15))}s
+          </span>
+          <div className="flex gap-0.5">
+            {[...Array(3)].map((_, i) => (
+              <div 
+                key={i} 
+                className={cn(
+                  "w-1 h-3 rounded-full bg-primary/20",
+                  (15 - (Math.floor(Date.now() / 1000) % 15)) > (i * 5) && "bg-primary animate-pulse"
+                )} 
+              />
+            ))}
+          </div>
+        </div>
+      </div>
+
       <div className="ml-auto flex items-center gap-4 text-[10px] text-muted-foreground font-mono">
         <span className="flex items-center gap-1.5">
           <span className="w-2.5 h-2.5 rounded-[3px] grid-cell-open border" /> Open

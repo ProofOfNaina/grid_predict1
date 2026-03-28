@@ -34,9 +34,9 @@ export const PRICE_STEP_MAP: Record<string, number> = {
 
 export const DEFAULT_GRID_CONFIG: GridConfig = {
   priceStep: 0.1, 
-  timeStep: 5,
-  futureWindow: 30,
-  priceLevels: 4,
+  timeStep: 15, // 15s columns
+  futureWindow: 150, // 10 columns
+  priceLevels: 5,
 };
 
 export const PAYOUT_MULTIPLIER = 4;

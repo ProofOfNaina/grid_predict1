@@ -55,6 +55,11 @@ export function PredictionGrid({
 
   const reversedLevels = useMemo(() => [...priceLevels].reverse(), [priceLevels]);
 
+  // Calculate the current 15-second epoch start time
+  const timeStepMs = 15000;
+  const now = Date.now();
+  const currentEpochStartTime = Math.floor(now / timeStepMs) * timeStepMs;
+
   return (
     <div className="flex-1 overflow-auto px-6 py-3">
       <div className="min-w-[600px]">
@@ -97,10 +102,15 @@ export function PredictionGrid({
 
                 {timeSlots.map((slot, colIdx) => {
                   const actualPriceLevel = priceLevels[priceLevels.length - 1 - rowIdx];
-                  const timeStepMs = grid.length > 1 ? Math.abs(grid[1].startTime - grid[0].startTime) : 5000;
+                  const timeStepMs = 15000; // Use fixed 15s step
+                  
+                  // Align columns to 15s boundaries starting from 'now' relative to the latest 15s epoch
+                  const nowRounded = Math.floor(Date.now() / 15000) * 15000;
+                  const targetStartTime = nowRounded + slot.index * timeStepMs;
+
                   const cell = grid.find(
                     c => c.priceMin === actualPriceLevel.min && 
-                    Math.abs(c.startTime - (grid[0]?.startTime || 0) - slot.index * timeStepMs) < (timeStepMs / 2)
+                    Math.abs(c.startTime - targetStartTime) < (timeStepMs / 2)
                   );
 
                   if (!cell) {
