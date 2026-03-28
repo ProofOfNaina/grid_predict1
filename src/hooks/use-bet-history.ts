@@ -5,7 +5,7 @@ import { PAYOUT_MULTIPLIER } from '@/lib/grid-types';
 export function useBetHistory() {
   const [bets, setBets] = useState<BetRecord[]>([]);
 
-  const recordBet = useCallback((cell: GridCell, amount: number) => {
+  const recordBet = useCallback((cell: GridCell, amount: number, txHash?: string) => {
     const bet: BetRecord = {
       id: `bet-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       cellId: cell.id,
@@ -17,6 +17,7 @@ export function useBetHistory() {
       status: 'OPEN',
       placedAt: Date.now(),
       payout: amount * PAYOUT_MULTIPLIER,
+      txHash,
       claimed: false,
     };
     setBets(prev => [...prev, bet]);

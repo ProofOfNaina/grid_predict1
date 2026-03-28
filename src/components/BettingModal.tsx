@@ -12,7 +12,7 @@ interface BettingModalProps {
   cell: GridCell;
   symbol: string;
   onClose: () => void;
-  onPlaceBet: (cell: GridCell, amount: number) => void;
+  onPlaceBet: (cell: GridCell, amount: number, txHash?: string) => void;
 }
 
 const QUICK_AMOUNTS = [0.1, 0.5, 1, 2];
@@ -76,14 +76,21 @@ export function BettingModal({ cell, symbol, onClose, onPlaceBet }: BettingModal
           const sig = await wallet.sendTransaction(tx, connection);
           console.log('[BET SUCCESS] Signature:', sig);
           await connection.confirmTransaction(sig, 'confirmed');
-          toast.success(`Bet placed! TX: ${sig.slice(0, 8)}...`);
+          toast.success(`Bet placed!`, {
+            description: `TX: ${sig.slice(0, 12)}...`,
+            action: {
+              label: 'View Explorer',
+              onClick: () => window.open(`https://explorer.solana.com/tx/${sig}?cluster=devnet`, '_blank')
+            }
+          });
+          onPlaceBet(cell, numAmount, sig);
         }
       } else {
         await new Promise(r => setTimeout(r, 800));
-        toast.success('Bet placed (simulated — no program deployed)');
+        toast.success('Bet placed (simulated)');
+        onPlaceBet(cell, numAmount);
       }
 
-      onPlaceBet(cell, numAmount);
       onClose();
     } catch (err: any) {
       console.error('[BET ERROR]', err);

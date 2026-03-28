@@ -53,5 +53,6 @@ export interface BetRecord {
   status: GridStatus;
   placedAt: number;
   payout: number;
+  txHash?: string;
   claimed: boolean;
 }
