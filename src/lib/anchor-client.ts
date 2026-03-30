@@ -125,8 +125,8 @@ export async function buildPlaceBetTransaction(
     connection.getAccountInfo(gridPDA)
   ]);
 
-  // 1. Initialize Vault if it doesn't exist
-  if (!vaultInfo) {
+  // 1. Initialize Vault if it doesn't exist or if it's currently a raw System Account (length 0)
+  if (!vaultInfo || vaultInfo.data.length === 0) {
     tx.add(new TransactionInstruction({
       programId: PROGRAM_ID,
       keys: [
