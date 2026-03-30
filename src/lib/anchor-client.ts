@@ -62,7 +62,10 @@ const DISCRIMINATORS = {
   place_bet: Buffer.from([222, 62, 67, 220, 63, 166, 126, 33]),  // sha256("global:place_bet")[0..8]
   claim_reward: Buffer.from([149, 95, 181, 242, 94, 90, 158, 162]), // sha256("global:claim_reward")[0..8]
   collect_revenue: Buffer.from([87, 96, 211, 36, 240, 43, 246, 87]), // sha256("global:collect_revenue")
+  resolve_grid: Buffer.from([140, 52, 19, 246, 85, 99, 60, 249]), // sha256("global:resolve_grid")[0..8]
 };
+
+const ADMIN_PUBKEY = new PublicKey('3mkMtv9kbVYi1Zh2dANQgPzR3d8oQ9hiMxsHZb515pBN');
 
 export async function buildCollectRevenueTransaction(
   connection: Connection,
@@ -196,13 +199,37 @@ export async function buildClaimRewardTransaction(
   const [betPDA] = getBetPDA(gridPDA, wallet.publicKey);
   const [vaultPDA] = getVaultPDA();
 
+  const tx = new Transaction();
+
+  // Add Compute Budget
+  tx.add(ComputeBudgetProgram.setComputeUnitLimit({ units: 400000 }));
+
+  // Check grid status to see if we need to resolve it first
+  const gridInfo = await connection.getAccountInfo(gridPDA);
+  if (gridInfo && gridInfo.data.length >= 73) {
+    const status = gridInfo.data[72]; // 2 means Touched
+    if (status !== 2) {
+      const resolveIx = new TransactionInstruction({
+        programId: PROGRAM_ID,
+        keys: [
+          { pubkey: gridPDA, isSigner: false, isWritable: true },
+          { pubkey: vaultPDA, isSigner: false, isWritable: true },
+          { pubkey: ADMIN_PUBKEY, isSigner: false, isWritable: true },
+          { pubkey: wallet.publicKey, isSigner: true, isWritable: false },
+        ],
+        data: DISCRIMINATORS.resolve_grid,
+      });
+      tx.add(resolveIx);
+    }
+  }
+
   const data = Buffer.concat([
     DISCRIMINATORS.claim_reward,
     encodeU64(priceMin * 100),
     encodeI64(startTime / 1000),
   ]);
 
-  const ix = new TransactionInstruction({
+  const claimIx = new TransactionInstruction({
     programId: PROGRAM_ID,
     keys: [
       { pubkey: betPDA, isSigner: false, isWritable: true },
@@ -213,7 +240,8 @@ export async function buildClaimRewardTransaction(
     data,
   });
 
-  const tx = new Transaction().add(ix);
+  tx.add(claimIx);
+
   tx.feePayer = wallet.publicKey;
   const { blockhash } = await connection.getLatestBlockhash();
   tx.recentBlockhash = blockhash;
