@@ -86,7 +86,6 @@ export async function buildCollectRevenueTransaction(
     programId: PROGRAM_ID,
     keys: [
       { pubkey: vaultPDA, isSigner: false, isWritable: true },
-      { pubkey: wallet.publicKey, isSigner: true, isWritable: true }, // Owner
       { pubkey: wallet.publicKey, isSigner: true, isWritable: true }, // Authority
     ],
     data,
@@ -209,15 +208,10 @@ export async function buildClaimRewardTransaction(
   if (gridInfo && gridInfo.data.length >= 73) {
     const status = gridInfo.data[72]; // 2 means Touched
     if (status !== 2) {
-      const vaultInfo = await connection.getAccountInfo(vaultPDA);
-      const vaultOwner = vaultInfo ? new PublicKey(vaultInfo.data.subarray(8, 40)) : ADMIN_PUBKEY;
-
       const resolveIx = new TransactionInstruction({
         programId: PROGRAM_ID,
         keys: [
           { pubkey: gridPDA, isSigner: false, isWritable: true },
-          { pubkey: vaultPDA, isSigner: false, isWritable: true },
-          { pubkey: vaultOwner, isSigner: false, isWritable: true },
           { pubkey: wallet.publicKey, isSigner: true, isWritable: false },
         ],
         data: DISCRIMINATORS.resolve_grid,
