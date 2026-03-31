@@ -4,7 +4,7 @@ import { useWallet } from '@solana/wallet-adapter-react';
 import { useNavigate } from 'react-router-dom';
 import { Header } from '@/components/Header';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
-import { useBetHistory } from '@/hooks/use-bet-history';
+import { useTrading } from '@/contexts/TradingContext';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
@@ -20,7 +20,7 @@ interface UserProfile {
 const Profile = () => {
   const { connected, publicKey } = useWallet();
   const navigate = useNavigate();
-  const { bets } = useBetHistory();
+  const { bets } = useTrading();
   
   const [profile, setProfile] = useState<UserProfile>({ name: '', bio: '' });
   const [isEditing, setIsEditing] = useState(false);

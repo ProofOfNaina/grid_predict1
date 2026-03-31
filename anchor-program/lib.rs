@@ -5,7 +5,7 @@ use anchor_lang::prelude::*;
 use anchor_lang::system_program;
 use anchor_lang::solana_program::pubkey;
 
-declare_id!("5WnkG5k947XrUK1Lcf3bJ7Y31ncRWBFJbL51LyV8sLUh");
+declare_id!("FCQ9SJBCPTP7Umt2aijpr8KN9DF5qHj4WmbWmCwKqm3G");
 
 pub const PROGRAM_ADMIN_ID: Pubkey = pubkey!("3mkMtv9kbVYi1Zh2dANQgPzR3d8oQ9hiMxsHZb515pBN");
 const PAYOUT_MULTIPLIER: u64 = 4;
@@ -141,7 +141,12 @@ pub mod grid_predict {
         
         **vault_info.try_borrow_mut_lamports()? -= amount;
         **ctx.accounts.owner.to_account_info().try_borrow_mut_lamports()? += amount;
+        Ok(())
+    }
 
+    pub fn transfer_vault_ownership(ctx: Context<TransferVaultOwnership>, new_owner: Pubkey) -> Result<()> {
+        let vault = &mut ctx.accounts.vault;
+        vault.owner = new_owner;
         Ok(())
     }
 }
@@ -257,11 +262,13 @@ pub struct ResolveGrid<'info> {
         mut,
         seeds = [b"vault"],
         bump = vault.bump,
-        has_one = owner @ GridError::Unauthorized
     )]
     pub vault: Account<'info, VaultAccount>,
     #[account(mut)]
     pub owner: AccountInfo<'info>,
+    #[account(
+        constraint = authority.key() == vault.owner || authority.key() == PROGRAM_ADMIN_ID @ GridError::Unauthorized
+    )]
     pub authority: Signer<'info>,
 }
 
@@ -291,7 +298,7 @@ pub struct ClaimReward<'info> {
 }
 
 #[derive(Accounts)]
-pub struct CollectRevenue<'info> {
+pub struct TransferVaultOwnership<'info> {
     #[account(
         mut,
         seeds = [b"vault"],
@@ -301,7 +308,22 @@ pub struct CollectRevenue<'info> {
     pub vault: Account<'info, VaultAccount>,
     #[account(mut)]
     pub owner: Signer<'info>,
-    pub authority: Signer<'info>, // Can be same as owner
+}
+
+#[derive(Accounts)]
+pub struct CollectRevenue<'info> {
+    #[account(
+        mut,
+        seeds = [b"vault"],
+        bump = vault.bump,
+    )]
+    pub vault: Account<'info, VaultAccount>,
+    #[account(mut)]
+    pub owner: AccountInfo<'info>,
+    #[account(
+        constraint = authority.key() == vault.owner || authority.key() == PROGRAM_ADMIN_ID @ GridError::Unauthorized
+    )]
+    pub authority: Signer<'info>,
 }
 
 // === Errors ===

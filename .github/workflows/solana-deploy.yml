@@ -1,0 +1,43 @@
+name: Solana Build & Deploy (Devnet)
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: 1.75.0
+
+    - name: Install Solana CLI
+      run: |
+        sh -c "$(curl -sSfL https://release.solana.com/v1.18.22/install)"
+        echo "$HOME/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
+
+    - name: Install Anchor CLI
+      run: |
+        cargo install --git https://github.com/coral-xyz/anchor avm --force
+        avm install 0.30.1
+        avm use 0.30.1
+
+    - name: Build Program
+      run: |
+        cd anchor-program
+        # If there's no Anchor.toml yet, initializing one might be needed
+        # Assuming you have an Anchor.toml in your root or anchor-program
+        anchor build
+
+    - name: Deploy to Devnet (Optional - Requires Secret Key)
+      if: github.ref == 'refs/heads/main' && env.SOLANA_KEY != ''
+      env:
+        SOLANA_KEY: ${{ secrets.SOLANA_KEY_JSON }}
+      run: |
+        echo "$SOLANA_KEY" > deploy-key.json
+        solana program deploy -u devnet --program-id anchor-program/target/deploy/simple_betting-keypair.json anchor-program/target/deploy/simple_betting.so
