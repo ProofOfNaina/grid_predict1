@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { cn } from '@/lib/utils';
 import type { BetRecord } from '@/lib/grid-types';
 import { PAYOUT_MULTIPLIER } from '@/lib/grid-types';
+import { toast } from 'sonner';
 
 interface BetHistoryPanelProps {
   bets: BetRecord[];
@@ -10,6 +11,7 @@ interface BetHistoryPanelProps {
   onToggle: () => void;
   vaultBalance?: number;
   onCollectRevenue?: (amount: number) => void;
+  onResolveGrid?: (betId: string) => void;
   isAdmin?: boolean;
 }
 
@@ -40,6 +42,7 @@ export function BetHistoryPanel({
   onToggle,
   vaultBalance,
   onCollectRevenue,
+  onResolveGrid,
   isAdmin
 }: BetHistoryPanelProps) {
   const stats = useMemo(() => {
@@ -134,12 +137,27 @@ export function BetHistoryPanel({
               onClick={() => onCollectRevenue?.(Math.max(0, vaultBalance - 0.01))}
               disabled={vaultBalance < 0.05}
               className={cn(
-                'w-full py-2 rounded-md text-[10px] font-bold transition-all transition-all duration-200',
+                'w-full py-2 rounded-md text-[10px] font-bold transition-all transition-all duration-200 mb-2',
                 'bg-primary text-primary-foreground hover:shadow-[0_0_15px_hsl(var(--primary)/0.3)]',
                 'disabled:opacity-30 disabled:grayscale'
               )}
             >
               Withdraw Profits
+            </button>
+            
+            <button
+              onClick={() => {
+                const firstPending = bets.find(b => b.status !== 'EXPIRED' && !b.claimed);
+                if (firstPending) onResolveGrid?.(firstPending.id);
+                else toast.info('No pending grids to resolve!');
+              }}
+              className={cn(
+                'w-full py-2 rounded-md text-[10px] font-bold transition-all transition-all duration-200',
+                'bg-zinc-800 text-white border border-primary/40 hover:bg-zinc-700',
+                'hover:shadow-[0_0_15px_hsl(var(--primary)/0.1)]'
+              )}
+            >
+              Resolve All Wins
             </button>
             <p className="mt-2 text-[8px] text-muted-foreground/50 text-center leading-tight">
               Withdraws all funds except a small reserve for fees.

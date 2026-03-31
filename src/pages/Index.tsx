@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useConnection, useWallet } from '@solana/wallet-adapter-react';
 import { toast } from 'sonner';
 import { Header } from '@/components/Header';
@@ -9,34 +9,27 @@ import { BettingModal } from '@/components/BettingModal';
 import { BetHistoryPanel } from '@/components/BetHistoryPanel';
 import { StatsBar } from '@/components/StatsBar';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { usePriceFeed } from '@/hooks/use-price-feed';
-import { useGridEngine } from '@/hooks/use-grid-engine';
-import { useBetHistory } from '@/hooks/use-bet-history';
-import { buildClaimRewardTransaction } from '@/lib/anchor-client';
-import { DEFAULT_GRID_CONFIG, PRICE_STEP_MAP } from '@/lib/grid-types';
+import { useTrading } from '@/contexts/TradingContext';
+import { buildClaimRewardTransaction, checkIsAdmin } from '@/lib/anchor-client';
 import type { GridCell, BetRecord } from '@/lib/grid-types';
 
 const Index = () => {
-  const [activePair, setActivePair] = useState('SOL/USD');
-  const { currentPrice, priceHistory, priceChange, connected: priceConnected } = usePriceFeed(activePair);
   const { connection } = useConnection();
   const wallet = useWallet();
   
-  const config = useMemo(() => ({
-    ...DEFAULT_GRID_CONFIG,
-    priceStep: PRICE_STEP_MAP[activePair] || 0.1
-  }), [activePair]);
+  const {
+    activePair, setActivePair,
+    currentPrice, priceHistory, priceChange, priceConnected,
+    grid, placeBet, timeSlots, priceLevels, epoch,
+    bets, recordBet, claimReward
+  } = useTrading();
 
-  const { grid, placeBet, timeSlots, priceLevels, epoch } = useGridEngine(currentPrice, config);
-  const { bets, recordBet, syncWithGrid, claimReward } = useBetHistory();
   const [selectedCell, setSelectedCell] = useState<GridCell | null>(null);
   const [historyVisible, setHistoryVisible] = useState(false);
   const [vaultBalance, setVaultBalance] = useState(0);
 
-  // Sync bet statuses and fetch vault balance periodically
+  // Sync vault balance periodically
   useEffect(() => {
-    syncWithGrid(grid);
-    
     const fetchBalance = async () => {
       try {
         const { getVaultPDA } = await import('@/lib/anchor-client');
@@ -51,7 +44,7 @@ const Index = () => {
     fetchBalance();
     const timer = setInterval(fetchBalance, 10000);
     return () => clearInterval(timer);
-  }, [grid, syncWithGrid, connection]);
+  }, [connection]);
 
   const handleCellClick = useCallback((cell: GridCell) => {
     setSelectedCell(cell);
@@ -113,6 +106,26 @@ const Index = () => {
     }
   }, [connection, wallet]);
 
+  const handleResolveGrid = useCallback(async (betId: string) => {
+    const bet = bets.find(b => b.id === betId);
+    if (!bet || !wallet.connected || !wallet.publicKey || !wallet.sendTransaction) return;
+    try {
+      const { buildResolveGridTransaction } = await import('@/lib/anchor-client');
+      const tx = await buildResolveGridTransaction(connection, wallet, bet.priceMin, bet.startTime);
+      if (tx) {
+        const sig = await wallet.sendTransaction(tx, connection);
+        toast.info('Resolving Grid on-chain...', { description: 'Confirming state change...' });
+        await connection.confirmTransaction(sig, 'confirmed');
+        toast.success('Grid resolved successfully!', {
+          description: `TX: ${sig.slice(0, 12)}...`,
+        });
+      }
+    } catch (err: any) {
+      console.error('[RESOLVE ERROR]', err);
+      toast.error('Failed to resolve grid', { description: err.message || 'Check console' });
+    }
+  }, [bets, connection, wallet]);
+
   return (
     <div className="flex flex-col h-screen bg-background overflow-hidden">
       <Header />
@@ -145,7 +158,8 @@ const Index = () => {
         onToggle={() => setHistoryVisible(v => !v)}
         vaultBalance={vaultBalance}
         onCollectRevenue={handleCollectRevenue}
-        isAdmin={wallet.publicKey?.toBase58() === '3mkMtv9kbVYi1Zh2dANQgPzR3d8oQ9hiMxsHZb515pBN'}
+        onResolveGrid={handleResolveGrid}
+        isAdmin={checkIsAdmin(wallet.publicKey?.toBase58())}
       />
       {selectedCell && (
         <BettingModal

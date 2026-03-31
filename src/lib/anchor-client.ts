@@ -1,21 +1,34 @@
-// Anchor Program Integration Layer
-// Connects the frontend to a deployed Solana program.
-// Replace PROGRAM_ID with your actual deployed program ID.
-
-import { PublicKey, SystemProgram, Transaction, TransactionInstruction, ComputeBudgetProgram } from '@solana/web3.js';
+import {
+  PublicKey,
+  SystemProgram,
+  Transaction,
+  TransactionInstruction,
+  ComputeBudgetProgram
+} from '@solana/web3.js';
 import type { WalletContextState } from '@solana/wallet-adapter-react';
 import type { Connection } from '@solana/web3.js';
+import { Buffer } from 'buffer';
 
-// Replace with your deployed program ID after `anchor deploy`
-export const PROGRAM_ID = new PublicKey('5WnkG5k947XrUK1Lcf3bJ7Y31ncRWBFJbL51LyV8sLUh');
+console.log('[ANCHOR CLIENT] Final Accuracy Version Active.');
 
-// PDA derivation helpers
+// ---------------- PROGRAM ----------------
+
+export const CONNECTION_URL = 'https://api.devnet.solana.com';
+export const PROGRAM_ID = new PublicKey('FCQ9SJBCPTP7Umt2aijpr8KN9DF5qHj4WmbWmCwKqm3G');
+export const VAULT_PDA = PublicKey.findProgramAddressSync([Buffer.from('vault')], PROGRAM_ID)[0];
+export const ADMIN_PUBKEY = new PublicKey('3mkMtv9kbVYi1Zh2dANQgPzR3d8oQ9hiMxsHZb515pBN');
+
+// ---------------- PDA DERIVATION ----------------
+export const isProgramDeployed = () => true;
+
+// ---------------- PDA ----------------
+
 export function getGridPDA(priceMin: number, startTime: number): [PublicKey, number] {
   const priceMinBuf = Buffer.alloc(8);
-  priceMinBuf.writeBigUInt64LE(BigInt(Math.round(priceMin * 100))); // cents
+  priceMinBuf.writeBigUInt64LE(BigInt(Math.round(priceMin * 100)));
 
   const startTimeBuf = Buffer.alloc(8);
-  startTimeBuf.writeBigInt64LE(BigInt(Math.floor(startTime / 1000))); // unix seconds
+  startTimeBuf.writeBigInt64LE(BigInt(Math.floor(startTime / 1000)));
 
   return PublicKey.findProgramAddressSync(
     [Buffer.from('grid'), priceMinBuf, startTimeBuf],
@@ -31,18 +44,15 @@ export function getBetPDA(gridKey: PublicKey, bettor: PublicKey): [PublicKey, nu
 }
 
 export function getVaultPDA(): [PublicKey, number] {
+  // Uses "vault" seeds to match the smart contract and check-vault script
   return PublicKey.findProgramAddressSync(
     [Buffer.from('vault')],
     PROGRAM_ID
   );
 }
 
-// Check if we're connected to a real program (not the system program placeholder)
-export function isProgramDeployed(): boolean {
-  return PROGRAM_ID.toBase58() !== '11111111111111111111111111111111';
-}
+// ---------------- ENCODERS ----------------
 
-// Helper methods for encoding
 function encodeU64(value: number): Buffer {
   const buf = Buffer.alloc(8);
   buf.writeBigUInt64LE(BigInt(Math.round(value)));
@@ -55,45 +65,126 @@ function encodeI64(value: number): Buffer {
   return buf;
 }
 
-// Anchor instruction discriminators (first 8 bytes of sha256("global:<instruction_name>"))
+// ---------------- DISCRIMINATORS ----------------
+
+// ---------------- DISCRIMINATORS ----------------
+
 const DISCRIMINATORS = {
-  initialize_vault: Buffer.from([48, 191, 163, 44, 71, 129, 63, 164]), // sha256("global:initialize_vault")[0..8]
-  create_grid: Buffer.from([100, 135, 127, 158, 30, 0, 37, 82]), // sha256("global:create_grid")[0..8]
-  place_bet: Buffer.from([222, 62, 67, 220, 63, 166, 126, 33]),  // sha256("global:place_bet")[0..8]
-  claim_reward: Buffer.from([149, 95, 181, 242, 94, 90, 158, 162]), // sha256("global:claim_reward")[0..8]
-  collect_revenue: Buffer.from([87, 96, 211, 36, 240, 43, 246, 87]), // sha256("global:collect_revenue")
+  initialize_vault: Buffer.from([48, 191, 163, 44, 71, 129, 63, 164]),
+  create_grid: Buffer.from([100, 135, 127, 158, 30, 0, 37, 82]),
+  place_bet: Buffer.from([222, 62, 67, 220, 63, 166, 126, 33]),
+  resolve_grid: Buffer.from([140, 52, 19, 246, 85, 99, 207, 149]),
+  expire_grid: Buffer.from([104, 216, 211, 125, 7, 188, 2, 43]),
+  claim_reward: Buffer.from([149, 95, 181, 242, 94, 90, 158, 162]),
+  collect_revenue: Buffer.from([87, 96, 211, 36, 240, 43, 246, 87]),
 };
 
-export async function buildCollectRevenueTransaction(
+// ---------------- ADMIN ----------------
+
+const ADMIN_LIST = [
+  '3mkMtv9kbVYi1Zh2dANQgPzR3d8oQ9hiMxsHZb515pBN',
+  'B9jyXfYdyKpGsLR569VHcpfWqxnyVBCnBMPZxSyoucHj'
+];
+
+export function checkIsAdmin(pubkey?: string): boolean {
+  if (!pubkey) return false;
+  return ADMIN_LIST.includes(pubkey);
+}
+
+// ---------------- TRANSACTIONS ----------------
+
+export async function buildResolveGridTransaction(
   connection: Connection,
   wallet: WalletContextState,
-  amount: number, // in SOL
+  priceMin: number,
+  startTime: number,
+  isExpiry: boolean = false
 ): Promise<Transaction | null> {
-  if (!wallet.publicKey || !isProgramDeployed()) return null;
+  if (!wallet.publicKey) return null;
 
+  const [gridPDA] = getGridPDA(priceMin, startTime);
   const [vaultPDA] = getVaultPDA();
-  const lamports = Math.round(amount * 1e9);
 
-  const data = Buffer.concat([
-    DISCRIMINATORS.collect_revenue,
-    encodeU64(lamports),
-  ]);
+  const tx = new Transaction();
+  tx.add(ComputeBudgetProgram.setComputeUnitLimit({ units: 200000 }));
 
   const ix = new TransactionInstruction({
     programId: PROGRAM_ID,
     keys: [
+      { pubkey: gridPDA, isSigner: false, isWritable: true },
       { pubkey: vaultPDA, isSigner: false, isWritable: true },
-      { pubkey: wallet.publicKey, isSigner: true, isWritable: true }, // Owner
-      { pubkey: wallet.publicKey, isSigner: true, isWritable: true }, // Authority
+      { pubkey: ADMIN_PUBKEY, isSigner: false, isWritable: true },
+      { pubkey: wallet.publicKey, isSigner: true, isWritable: false },
     ],
-    data,
+    data: isExpiry ? DISCRIMINATORS.expire_grid : DISCRIMINATORS.resolve_grid,
   });
 
-  const tx = new Transaction().add(ix);
+  tx.add(ix);
   tx.feePayer = wallet.publicKey;
-  const { blockhash } = await connection.getLatestBlockhash();
-  tx.recentBlockhash = blockhash;
+  tx.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
 
+  return tx;
+}
+
+export async function buildCollectRevenueTransaction(
+  connection: Connection,
+  wallet: WalletContextState,
+  amount: number,
+): Promise<Transaction | null> {
+  if (!wallet.publicKey) return null;
+
+  const [vaultPDA] = getVaultPDA();
+  const lamports = Math.round(amount * 1e9);
+
+  const tx = new Transaction();
+  tx.add(new TransactionInstruction({
+    programId: PROGRAM_ID,
+    keys: [
+      { pubkey: vaultPDA, isSigner: false, isWritable: true },
+      { pubkey: wallet.publicKey, isSigner: true, isWritable: true }, // Owner
+      { pubkey: wallet.publicKey, isSigner: true, isWritable: false }, // Authority
+    ],
+    data: Buffer.concat([DISCRIMINATORS.collect_revenue, encodeU64(lamports)]),
+  }));
+
+  tx.feePayer = wallet.publicKey;
+  tx.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
+  return tx;
+}
+
+export async function buildClaimRewardTransaction(
+  connection: Connection,
+  wallet: WalletContextState,
+  priceMin: number,
+  startTime: number
+) {
+  if (!wallet.publicKey) return null;
+
+  const [gridPDA] = getGridPDA(priceMin, startTime);
+  const [betPDA] = getBetPDA(gridPDA, wallet.publicKey);
+  const [vaultPDA] = getVaultPDA();
+
+  const tx = new Transaction().add(
+    ComputeBudgetProgram.setComputeUnitLimit({ units: 200000 })
+  );
+
+  tx.add(new TransactionInstruction({
+    programId: PROGRAM_ID,
+    keys: [
+      { pubkey: betPDA, isSigner: false, isWritable: true },
+      { pubkey: gridPDA, isSigner: false, isWritable: false },
+      { pubkey: vaultPDA, isSigner: false, isWritable: true },
+      { pubkey: wallet.publicKey, isSigner: true, isWritable: true },
+    ],
+    data: Buffer.concat([
+      DISCRIMINATORS.claim_reward,
+      encodeU64(Math.round(priceMin * 100)),
+      encodeI64(Math.floor(startTime / 1000)),
+    ]),
+  }));
+
+  tx.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
+  tx.feePayer = wallet.publicKey;
   return tx;
 }
 
@@ -104,27 +195,28 @@ export async function buildPlaceBetTransaction(
   priceMax: number,
   startTime: number,
   endTime: number,
-  amount: number, // in SOL
+  amount: number,
 ): Promise<Transaction | null> {
-  if (!wallet.publicKey || !isProgramDeployed()) return null;
+  if (!wallet.publicKey) return null;
 
   const [gridPDA] = getGridPDA(priceMin, startTime);
   const [betPDA] = getBetPDA(gridPDA, wallet.publicKey);
   const [vaultPDA] = getVaultPDA();
 
   const tx = new Transaction();
-
-  // 0. Add Compute Budget (Multi-instruction transactions need more units)
   tx.add(ComputeBudgetProgram.setComputeUnitLimit({ units: 400000 }));
 
-  // Check vault and grid existence
+  // Check state to avoid "Double-Initialization" or "Not Initialized" errors
   const [vaultInfo, gridInfo] = await Promise.all([
-    connection.getAccountInfo(vaultPDA),
-    connection.getAccountInfo(gridPDA)
+    connection.getAccountInfo(vaultPDA).catch(() => null),
+    connection.getAccountInfo(gridPDA).catch(() => null)
   ]);
 
-  // 1. Initialize Vault if it doesn't exist
-  if (!vaultInfo) {
+  // If the account has no owner yet or is owned by system program (111...) with 0 data, it needs init
+  const needsVaultInit = !vaultInfo || vaultInfo.owner.toBase58() === '11111111111111111111111111111111' || vaultInfo.data.length === 0;
+  const needsGridInit = !gridInfo || gridInfo.owner.toBase58() === '11111111111111111111111111111111' || gridInfo.data.length === 0;
+
+  if (needsVaultInit) {
     tx.add(new TransactionInstruction({
       programId: PROGRAM_ID,
       keys: [
@@ -136,16 +228,7 @@ export async function buildPlaceBetTransaction(
     }));
   }
 
-  // 2. Create Grid if it doesn't exist
-  if (!gridInfo) {
-    const initData = Buffer.concat([
-      DISCRIMINATORS.create_grid,
-      encodeU64(priceMin * 100),
-      encodeU64(priceMax * 100),
-      encodeI64(startTime / 1000),
-      encodeI64(endTime / 1000),
-    ]);
-
+  if (needsGridInit) {
     tx.add(new TransactionInstruction({
       programId: PROGRAM_ID,
       keys: [
@@ -153,18 +236,18 @@ export async function buildPlaceBetTransaction(
         { pubkey: wallet.publicKey, isSigner: true, isWritable: true },
         { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
       ],
-      data: initData,
+      data: Buffer.concat([
+        DISCRIMINATORS.create_grid,
+        encodeU64(Math.round(priceMin * 100)),
+        encodeU64(Math.round(priceMax * 100)),
+        encodeI64(Math.floor(startTime / 1000)),
+        encodeI64(Math.floor(endTime / 1000)),
+      ]),
     }));
   }
 
+  // Mandatory: place_bet
   const lamports = Math.round(amount * 1e9);
-  const betData = Buffer.concat([
-    DISCRIMINATORS.place_bet,
-    encodeU64(priceMin * 100),
-    encodeI64(startTime / 1000),
-    encodeU64(lamports),
-  ]);
-
   tx.add(new TransactionInstruction({
     programId: PROGRAM_ID,
     keys: [
@@ -174,49 +257,15 @@ export async function buildPlaceBetTransaction(
       { pubkey: wallet.publicKey, isSigner: true, isWritable: true },
       { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
     ],
-    data: betData,
+    data: Buffer.concat([
+      DISCRIMINATORS.place_bet,
+      encodeU64(Math.round(priceMin * 100)),
+      encodeI64(Math.floor(startTime / 1000)),
+      encodeU64(lamports),
+    ]),
   }));
 
   tx.feePayer = wallet.publicKey;
-  const { blockhash } = await connection.getLatestBlockhash();
-  tx.recentBlockhash = blockhash;
-
-  return tx;
-}
-
-export async function buildClaimRewardTransaction(
-  connection: Connection,
-  wallet: WalletContextState,
-  priceMin: number,
-  startTime: number,
-): Promise<Transaction | null> {
-  if (!wallet.publicKey || !isProgramDeployed()) return null;
-
-  const [gridPDA] = getGridPDA(priceMin, startTime);
-  const [betPDA] = getBetPDA(gridPDA, wallet.publicKey);
-  const [vaultPDA] = getVaultPDA();
-
-  const data = Buffer.concat([
-    DISCRIMINATORS.claim_reward,
-    encodeU64(priceMin * 100),
-    encodeI64(startTime / 1000),
-  ]);
-
-  const ix = new TransactionInstruction({
-    programId: PROGRAM_ID,
-    keys: [
-      { pubkey: betPDA, isSigner: false, isWritable: true },
-      { pubkey: gridPDA, isSigner: false, isWritable: false },
-      { pubkey: vaultPDA, isSigner: false, isWritable: true },
-      { pubkey: wallet.publicKey, isSigner: true, isWritable: true },
-    ],
-    data,
-  });
-
-  const tx = new Transaction().add(ix);
-  tx.feePayer = wallet.publicKey;
-  const { blockhash } = await connection.getLatestBlockhash();
-  tx.recentBlockhash = blockhash;
-
+  tx.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
   return tx;
 }
